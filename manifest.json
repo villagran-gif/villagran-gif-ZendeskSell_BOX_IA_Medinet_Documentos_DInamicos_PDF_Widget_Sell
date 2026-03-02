@@ -12,9 +12,10 @@
     }
   },
   "domainWhitelist": [
-    "sell-medinet-backend.onrender.com",
-    "sell-medinet-documentos-dinamicos-pdf.onrender.com"
-  ],
+  "sell-medinet-backend.onrender.com",
+  "sell-medinet-documentos-dinamicos-pdf.onrender.com",
+  "box-ai-clinyco.onrender.com"
+],
   "parameters": [
     {
       "name": "backend_base_url",
