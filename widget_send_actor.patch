@@ -1,0 +1,52 @@
+diff --git a/assets/app.js b/assets/app.js
+--- a/assets/app.js
++++ b/assets/app.js
+@@
+   const state = {
+     settings: null,
+     deal: null,
+     contact: null,
++    actor: null,
+     payload: null,
+     deal_folder_url: null,
+     deal_folder_id: null,
+     last_doc_url: null,
+     templates: [],
+   };
++
++  async function getCurrentActor() {
++    const res = await client.request({
++      url: "/v2/users/self",
++      type: "GET",
++      contentType: "application/json",
++    });
++    const data = res && res.data ? res.data : res;
++    if (!data || !data.id) throw new Error("No se pudo obtener el usuario autenticado (users/self).");
++    const email = String(data.email || "").trim();
++    if (!email || !email.toLowerCase().endsWith("@clinyco.cl")) {
++      throw new Error("Acceso restringido: debes ingresar con usuario @clinyco.cl");
++    }
++    return { sell_user_id: Number(data.id), email, name: String(data.name || "").trim() };
++  }
+@@
+       const payload = {
+         deal_id: Number(state.deal.id),
+         drive_root_folder_id: normalizedRootFolderId,
++        actor: state.actor,
++        source: "sell_widget",
+       };
+@@
+       const payload = {
+         fecha,
+         object: objectPayload,
+         deal: {
+           folder_id: state.deal_folder_id,
+         },
++        actor: state.actor,
++        source: "sell_widget",
+       };
+@@
+       state.contact = await getContactContext(state.deal);
++
++      // Actor (agente) autenticado en Sell
++      state.actor = await getCurrentActor();
