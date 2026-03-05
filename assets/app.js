@@ -401,6 +401,24 @@
   }
 
 
+
+  // Formatea RUT a humano con puntos: 6469664-5 -> 6.469.664-5
+  function formatRutHuman(input) {
+    const original = String(input || "").trim();
+    const raw = original.toUpperCase().replace(/[^0-9K]/g, "");
+    if (raw.length < 2) return original;
+    const dv = raw.slice(-1);
+    let num = raw.slice(0, -1).replace(/^0+/, "");
+    if (!num) num = "0";
+    let out = "";
+    for (let i = num.length; i > 0; i -= 3) {
+      const start = Math.max(i - 3, 0);
+      const chunk = num.slice(start, i);
+      out = out ? `${chunk}.${out}` : chunk;
+    }
+    return `${out}-${dv}`;
+  }
+
   const API_ROUTES = {
     config: "/v1/config",
     driveFolderEnsure: "/v1/drive/folder/ensure",
@@ -621,6 +639,21 @@
         deal_id: Number(state.deal.id),
         drive_root_folder_id: normalizedRootFolderId,
       };
+      // --- FIX: folder_name canon con RUT humano (con puntos) ---
+      const rutHuman = formatRutHuman(state.payload && state.payload.rut);
+      const fullName = [state.payload && state.payload.first_name, state.payload && state.payload.last_name]
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .join(" ");
+      const folderName = [rutHuman, fullName].filter(Boolean).join(" - ");
+
+      // enviar ambos por compatibilidad (backend snake_case / camelCase)
+      if (folderName) {
+        payload.folder_name = folderName;
+        payload.folderName = folderName;
+      }
+
+
       if (state.settings.drive_shared_drive_id) {
         payload.drive_shared_drive_id = state.settings.drive_shared_drive_id;
       }
@@ -772,14 +805,31 @@
 
       setStatus("working", "Creando nota en Sell...");
 
-      const links = [];
-      if (state.deal_folder_url) links.push({ label: "📁 Carpeta Drive", url: state.deal_folder_url });
-      if (state.last_doc_url) links.push({ label: "📄 Último documento", url: state.last_doc_url });
+      // --- FIX: nota con mismo formato del Portal ---
+      const lines = [
+        "Documentos generados desde Portal",
+        "Agente consignado: Clínyco <@Clínyco>",
+      ];
+      if (state.deal_folder_url) lines.push(`Carpeta Drive: ${state.deal_folder_url}`);
+
+      if (state.last_doc_url) {
+        let docLabel = "DOCUMENTO";
+        try {
+          const selectedTemplate = templateSelect ? String(templateSelect.value || "") : "";
+          const parts = selectedTemplate.split(":");
+          if (parts.length > 1 && parts[1]) docLabel = String(parts[1]).trim();
+        } catch (_e) {
+          // ignore
+        }
+        lines.push(`• ${docLabel}: ${state.last_doc_url}`);
+      }
+
+      const noteContent = lines.join(String.fromCharCode(10)).trim();
 
       const payload = {
         deal_id: Number(state.deal.id),
         contact_id: state.contact ? Number(state.contact.id) : undefined,
-        links,
+        note_content: noteContent,
         source: "zendesk_sell_deal_card_generate_exams",
       };
 
@@ -792,7 +842,7 @@
         contentType: "application/json",
         data: JSON.stringify({
           data: {
-            content: links.map((l) => `${l.label}: ${l.url}`).join(String.fromCharCode(10)) || "Sin links disponibles",
+            content: noteContent || "Sin links disponibles",
             resource_type: "deal",
             resource_id: Number(state.deal.id),
             type: "regular",
