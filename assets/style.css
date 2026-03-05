@@ -69,10 +69,59 @@ button:disabled {
 }
 
 .status {
-  min-height: 20px;
+  min-height: 24px;
   margin: 10px 0 6px;
-  font-size: 13px;
+  font-size: 20px;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
+
+.statusText {
+  font-weight: 700;
+}
+
+.statusIcon {
+  width: 18px;
+  height: 18px;
+  display: inline-block;
+  flex: 0 0 18px;
+}
+
+.status-working .statusIcon {
+  border: 3px solid #e5e7eb;
+  border-top-color: #111827;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.status-success .statusIcon::before {
+  content: "✅";
+}
+
+.status-error .statusIcon::before {
+  content: "⚠️";
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.hint {
+  margin: 6px 0 10px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.hint-top {
+  margin-top: -2px;
+}
+
+.hint-bottom {
+  margin-top: 8px;
+}
+
 
 details {
   margin-top: 8px;

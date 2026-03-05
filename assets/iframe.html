@@ -11,23 +11,38 @@
     <main class="card">
       <h1>Generar Exámenes</h1>
 
-      <div class="grid2">
-        <button id="btnEnsureFolder" type="button">Crear Drive Carpeta (crear si no existe)</button>
-        <button id="btnOpenFolder" type="button" class="secondary" disabled>Abrir</button>
+      
+      <p class="hint hint-top">
+        Primero presiona <b>BOTÓN AZUL</b> y la App revisará si ya existe carpeta Drive (o la creará si NO existe).
+        Luego se activará el botón <b>Abrir carpeta</b>.
+      </p>
+
+<div class="grid2">
+        <button id="btnEnsureFolder" type="button">Revisa DRIVE si existe (o creará si NO existe)</button>
+        <button id="btnOpenFolder" type="button" class="secondary" disabled>Abrir carpeta de exámenes</button>
       </div>
 
       <div class="grid2" style="margin-top:10px;">
         <select id="templateSelect" class="select" disabled>
           <option value="">(Cargando plantillas...)</option>
         </select>
-        <button id="btnGenerate" type="button" class="secondary" disabled>Generar</button>
+        <button id="btnGenerate" type="button" class="secondary" disabled>Generar Exámenes</button>
+      </div>
+
+      <p class="hint hint-bottom">
+        Al generar, verás el estado del proceso aquí abajo. Si el navegador bloquea popups, usa el link “Abrir PDF”.
+      </p>
+
       </div>
 
       <button id="btnCreateNote" type="button" class="secondary" style="margin-top:10px;" disabled>
         Crear nota en Sell
       </button>
 
-      <p id="status" class="status">Listo ✅</p>
+      <p id="status" class="status status-success">
+        <span class="statusIcon" aria-hidden="true"></span>
+        <span class="statusText">Listo</span>
+      </p>
       <p id="pdfResult" class="status" style="display:none;">PDF: <a id="pdfLink" href="#" target="_blank" rel="noopener noreferrer">Abrir PDF</a></p>
 
       <details id="debugDetails">

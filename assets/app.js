@@ -54,8 +54,23 @@
   };
 
   // --------- helpers ---------
-  function setStatus(message) {
-    if (statusEl) statusEl.textContent = message;
+  function setStatus(type, message) {
+    const t = (type || "success").toLowerCase();
+    const text = String(message || "").trim();
+
+    if (statusEl) {
+      statusEl.classList.remove("status-working", "status-success", "status-error");
+      if (t === "working") statusEl.classList.add("status-working");
+      else if (t === "error") statusEl.classList.add("status-error");
+      else statusEl.classList.add("status-success");
+
+      const icon = statusEl.querySelector(".statusIcon");
+      const txt = statusEl.querySelector(".statusText");
+
+      if (txt) txt.textContent = text || (t === "working" ? "Procesando..." : t === "error" ? "Error" : "Listo");
+      else statusEl.textContent = text;
+    }
+
     scheduleResize();
   }
 
@@ -496,13 +511,6 @@
     if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
   }
-
-  function preopenWindow() {
-    try {
-      return window.open("about:blank", "_blank", "noopener,noreferrer");
-    } catch (_e) {
-      return null;
-    }
   }
 
   // --------- resize ---------
@@ -531,7 +539,7 @@
     };
 
     try {
-      setStatus("Cargando estado...");
+      setStatus("working", "Cargando estado...");
 
       debug.request = { endpoint: API_ROUTES.config, request_url: `${state.settings.backend_base_url}${API_ROUTES.config}`, method: "GET" };
       const res = await requestBackend(API_ROUTES.config, "GET", null, {
@@ -564,12 +572,12 @@
       if (btnOpenFolder) btnOpenFolder.disabled = !(state.deal_folder_url || state.deal_folder_id);
       if (btnCreateNote) btnCreateNote.disabled = false;
 
-      setStatus("Listo ✅");
+      setStatus("success", "Listo");
       setDebug(debug);
     } catch (e) {
       debug.error = formatError(e);
       // No bloqueamos la app si el status no existe; igual se puede asegurar carpeta.
-      setStatus("Listo ✅ (sin status)");
+      setStatus("success", "Listo (sin status)");
       setDebug(debug);
 
       // permitir acciones manuales
@@ -591,7 +599,7 @@
         throw new Error("Falta setting: drive_root_folder_id.");
       }
 
-      setStatus("Creando/asegurando carpeta Drive...");
+      setStatus("working", "Revisando/creando carpeta Drive...");
 
       const normalizedRootFolderId = normalizeDriveId(state.settings.drive_root_folder_id);
 
@@ -623,14 +631,14 @@
       if (btnOpenFolder) btnOpenFolder.disabled = !(state.deal_folder_url || state.deal_folder_id);
       if (btnGenerate) btnGenerate.disabled = !state.deal_folder_id;
 
-      setStatus("Carpeta lista ✅");
+      setStatus("success", "Carpeta lista");
       setDebug(debug);
 
       // refrescar status para cargar templates/links si backend lo soporta
       refreshStatus();
     } catch (e) {
       debug.error = formatError(e);
-      setStatus(e && e.message ? e.message : "Error");
+      setStatus("error", e && e.message ? e.message : "Error");
       setDebug(debug);
     }
   }
@@ -655,18 +663,7 @@
     return required.filter(([, value]) => !String(value || "").trim()).map(([name]) => name);
   }
 
-  function validateRequiredPlaceholders(objectPayload, fecha) {
-    const required = [
-      ["object.run", objectPayload.run],
-      ["object.nombres", objectPayload.nombres],
-      ["object.paterno", objectPayload.paterno],
-      ["object.prevision", objectPayload.prevision],
-      ["object.fecha_nacimiento", objectPayload.fecha_nacimiento],
-      ["fecha", fecha],
-    ];
-
-    return required.filter(([, value]) => !String(value || "").trim()).map(([name]) => name);
-  }
+  
 
   async function onGenerate() {
     const debug = {
@@ -677,7 +674,6 @@
       error: null,
     };
 
-    let win = null;
 
     try {
       const selectedTemplate = templateSelect ? String(templateSelect.value || "") : "";
@@ -687,9 +683,7 @@
       if (!state.payload) throw new Error("No se pudo construir payload.");
       if (!state.deal_folder_id) throw new Error("Primero debes crear Drive Carpeta.");
 
-      win = preopenWindow();
-
-      setStatus("Generando documento...");
+      setStatus("working", "Generando exámenes...");
 
       const objectPayload = Object.assign({}, state.payload, {
         run: state.payload.rut,
@@ -731,31 +725,21 @@
       setPdfLink(state.last_doc_url);
 
       if (url) {
-        if (win && !win.closed) {
-          try {
-            win.location.href = url;
-          } catch (_e) {
-            openUrlSafely(url);
-          }
-        } else {
-          openUrlSafely(url);
-        }
-      }
-
-      setStatus("Documento generado ✅");
-      setDebug(debug);
-
-      refreshStatus();
-    } catch (e) {
-      debug.error = formatError(e);
-      if (win && !win.closed) {
+        // Abrir 1 sola pestaña (sin pre-open "about:blank"). Si el navegador bloquea popups,
+        // queda disponible el link "Abrir PDF" en el widget.
         try {
-          win.close();
+          openUrlSafely(url);
         } catch (_e) {
           // ignore
         }
       }
-      setStatus(e && e.message ? e.message : "Error");
+
+      setStatus("success", "Documento generado");
+      setDebug(debug);
+
+      refreshStatus();
+    } catch (e) {
+      debug.error = formatError(e);      setStatus("error", e && e.message ? e.message : "Error");
       setDebug(debug);
     }
   }
@@ -772,7 +756,7 @@
     try {
       if (!state.deal || !state.deal.id) throw new Error("No hay Deal");
 
-      setStatus("Creando nota en Sell...");
+      setStatus("working", "Creando nota en Sell...");
 
       const links = [];
       if (state.deal_folder_url) links.push({ label: "📁 Carpeta Drive", url: state.deal_folder_url });
@@ -804,18 +788,18 @@
       }, state.settings.backend_timeout_ms);
       if (!res) throw new Error("No se pudo crear nota");
       debug.response = res;
-      setStatus("Nota creada ✅");
+      setStatus("success", "Nota creada");
       setDebug(debug);
     } catch (e) {
       debug.error = formatError(e);
-      setStatus(e && e.message ? e.message : "Error");
+      setStatus("error", e && e.message ? e.message : "Error");
       setDebug(debug);
     }
   }
 
   // --------- boot ---------
   async function boot() {
-    setStatus("Cargando...");
+    setStatus("working", "Cargando...");
     setButtonsEnabled(false);
     setPdfLink(null);
 
@@ -884,7 +868,7 @@
           templateSelect.disabled = true;
           templateSelect.innerHTML = "<option value=\"\">(Configura drive_root_folder_id)</option>";
         }
-        setStatus("Configura drive_root_folder_id para habilitar Drive.");
+        setStatus("error", "Configura drive_root_folder_id para habilitar Drive.");
       } else {
         // cargar status y templates si existe
         await refreshStatus();
@@ -895,7 +879,7 @@
       scheduleResize();
     } catch (e) {
       debug.error = formatError(e);
-      setStatus(e && e.message ? e.message : "Error al iniciar");
+      setStatus("error", e && e.message ? e.message : "Error al iniciar");
       setDebug(debug);
       setButtonsEnabled(false);
     }
