@@ -46,12 +46,35 @@
     settings: null,
     deal: null,
     contact: null,
+    actor: null,
     payload: null,
     deal_folder_url: null,
     deal_folder_id: null,
     last_doc_url: null,
     templates: [],
   };
+
+  async function getCurrentActor() {
+    const res = await client.request({
+      url: "/v2/users/self",
+      type: "GET",
+      contentType: "application/json",
+    });
+    const data = res && res.data ? res.data : res;
+    if (!data || !data.id) {
+      throw new Error("No se pudo obtener el usuario autenticado (users/self).");
+    }
+    return {
+      sell_user_id: Number(data.id),
+      email: String(data.email || "").trim(),
+      name: String(data.name || "").trim(),
+    };
+  }
+
+  function getActorLabel() {
+    const a = state.actor || {};
+    return String(a.name || "").trim() || String(a.email || "").trim() || "Agente";
+  }
 
   // --------- helpers ---------
   function setStatus(type, message) {
@@ -374,6 +397,60 @@
     ]);
   }
 
+  async function createSellNote(noteContent) {
+    if (!state.deal || !state.deal.id) throw new Error("No hay Deal");
+
+    const content = String(noteContent || "").trim() || "(Sin contenido)";
+
+    const res = await requestWithTimeout(
+      {
+        url: "/v2/notes",
+        type: "POST",
+        secure: true,
+        contentType: "application/json",
+        data: JSON.stringify({
+          data: {
+            content,
+            resource_type: "deal",
+            resource_id: Number(state.deal.id),
+            type: "regular",
+            is_important: false,
+          },
+        }),
+      },
+      state.settings && state.settings.backend_timeout_ms
+    );
+
+    if (!res) throw new Error("No se pudo crear nota");
+    return res;
+  }
+
+  function driveFolderFallbackUrl() {
+    return state.deal_folder_id
+      ? `https://drive.google.com/drive/folders/${state.deal_folder_id}`
+      : "";
+  }
+
+  function buildNoteFolderCreated() {
+    const folderUrl = state.deal_folder_url || driveFolderFallbackUrl();
+    const actor = getActorLabel();
+    return `Agente ${actor} creó carpeta Drive: ${folderUrl}`.trim();
+  }
+
+  function buildNoteExamGenerated(pdfUrl) {
+    const folderUrl = state.deal_folder_url || driveFolderFallbackUrl();
+    const actor = getActorLabel();
+    const pdf = String(pdfUrl || state.last_doc_url || "").trim();
+    return [
+      `Agente ${actor} creó orden de examen`,
+      folderUrl ? `Carpeta Drive: ${folderUrl}` : null,
+      pdf ? `PDF: ${pdf}` : null,
+    ]
+      .filter(Boolean)
+      .join(String.fromCharCode(10))
+      .trim();
+  }
+
   function normalizeDriveId(input) {
     const raw = String(input || "").trim();
     if (!raw) return "";
@@ -638,6 +715,8 @@
       const payload = {
         deal_id: Number(state.deal.id),
         drive_root_folder_id: normalizedRootFolderId,
+        actor: state.actor || undefined,
+        source: "sell_widget",
       };
       // --- FIX: folder_name canon con RUT humano (con puntos) ---
       const rutHuman = formatRutHuman(state.payload && state.payload.rut);
@@ -670,6 +749,12 @@
 
       state.deal_folder_url = data.web_view_url || data.drive_folder_url || data.folder_url || state.deal_folder_url;
       state.deal_folder_id = data.folder_id || data.drive_folder_id || state.deal_folder_id;
+
+      // fallback URL si el backend no lo devuelve
+      if (!state.deal_folder_url && state.deal_folder_id) {
+        state.deal_folder_url = `https://drive.google.com/drive/folders/${state.deal_folder_id}`;
+      }
+
       if (state.deal) {
         state.deal.folder_id = state.deal_folder_id;
         state.deal.web_view_url = state.deal_folder_url;
@@ -678,7 +763,20 @@
       if (btnOpenFolder) btnOpenFolder.disabled = !(state.deal_folder_url || state.deal_folder_id);
       if (btnGenerate) btnGenerate.disabled = !state.deal_folder_id;
 
-      setStatus("success", "Carpeta lista");
+      // Nota automática (equivalente a presionar "Crear nota en Sell")
+      try {
+        setStatus("working", "Carpeta lista. Registrando nota en Sell...");
+        await createSellNote(buildNoteFolderCreated());
+        setStatus("success", "Carpeta lista (nota creada)");
+      } catch (noteErr) {
+        // Carpeta OK pero nota falló
+        debug.note_error = formatError(noteErr);
+        setStatus(
+          "error",
+          `Carpeta lista, pero falló la nota en Sell: ${(noteErr && noteErr.message) || "Error"}`
+        );
+      }
+
       setDebug(debug);
 
       // refrescar status para cargar templates/links si backend lo soporta
@@ -752,6 +850,8 @@
         deal: {
           folder_id: state.deal_folder_id,
         },
+        actor: state.actor || undefined,
+        source: "sell_widget",
       };
 
       if (selectedKind === "package") payload.package_key = selectedKey;
@@ -781,7 +881,19 @@
         }
       }
 
-      setStatus("success", "Documento generado");
+      // Nota automática (equivalente a presionar "Crear nota en Sell")
+      try {
+        setStatus("working", "Documento generado. Registrando nota en Sell...");
+        await createSellNote(buildNoteExamGenerated(url));
+        setStatus("success", "Documento generado (nota creada)");
+      } catch (noteErr) {
+        debug.note_error = formatError(noteErr);
+        setStatus(
+          "error",
+          `Documento generado, pero falló la nota en Sell: ${(noteErr && noteErr.message) || "Error"}`
+        );
+      }
+
       setDebug(debug);
 
       refreshStatus();
@@ -805,52 +917,17 @@
 
       setStatus("working", "Creando nota en Sell...");
 
-      // --- FIX: nota con mismo formato del Portal ---
-      const lines = [
-        "Documentos generados desde Portal",
-        "Agente consignado: Clínyco <@Clínyco>",
-      ];
-      if (state.deal_folder_url) lines.push(`Carpeta Drive: ${state.deal_folder_url}`);
+      const content = [
+        `Agente ${getActorLabel()} registró links`,
+        state.deal_folder_url ? `Carpeta Drive: ${state.deal_folder_url}` : null,
+        state.last_doc_url ? `PDF: ${state.last_doc_url}` : null,
+      ]
+        .filter(Boolean)
+        .join(String.fromCharCode(10));
 
-      if (state.last_doc_url) {
-        let docLabel = "DOCUMENTO";
-        try {
-          const selectedTemplate = templateSelect ? String(templateSelect.value || "") : "";
-          const parts = selectedTemplate.split(":");
-          if (parts.length > 1 && parts[1]) docLabel = String(parts[1]).trim();
-        } catch (_e) {
-          // ignore
-        }
-        lines.push(`• ${docLabel}: ${state.last_doc_url}`);
-      }
+      debug.payload = { content };
 
-      const noteContent = lines.join(String.fromCharCode(10)).trim();
-
-      const payload = {
-        deal_id: Number(state.deal.id),
-        contact_id: state.contact ? Number(state.contact.id) : undefined,
-        note_content: noteContent,
-        source: "zendesk_sell_deal_card_generate_exams",
-      };
-
-      debug.payload = payload;
-
-      const res = await requestWithTimeout({
-        url: "/v2/notes",
-        type: "POST",
-        secure: true,
-        contentType: "application/json",
-        data: JSON.stringify({
-          data: {
-            content: noteContent || "Sin links disponibles",
-            resource_type: "deal",
-            resource_id: Number(state.deal.id),
-            type: "regular",
-            is_important: false,
-          },
-        }),
-      }, state.settings.backend_timeout_ms);
-      if (!res) throw new Error("No se pudo crear nota");
+      const res = await createSellNote(content);
       debug.response = res;
       setStatus("success", "Nota creada");
       setDebug(debug);
@@ -873,6 +950,7 @@
       settings: null,
       deal_id: null,
       contact_id: null,
+      actor: null,
       payload: null,
       warnings: [],
       error: null,
@@ -893,6 +971,17 @@
 
       state.deal = await getDealContext();
       debug.deal_id = state.deal.id;
+
+      // Actor (agente) autenticado en Sell
+      try {
+        state.actor = await getCurrentActor();
+        debug.actor = state.actor;
+      } catch (actorErr) {
+        state.actor = null;
+        debug.warnings.push(
+          `No se pudo obtener el agente (users/self): ${(actorErr && actorErr.message) || "Error"}`
+        );
+      }
 
       state.contact = await getContactContext(state.deal);
       debug.contact_id = state.contact.id;
