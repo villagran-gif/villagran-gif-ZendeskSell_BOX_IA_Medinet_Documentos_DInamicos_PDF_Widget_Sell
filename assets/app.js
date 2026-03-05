@@ -511,6 +511,18 @@
     if (!url) return;
     window.open(url, "_blank", "noopener,noreferrer");
   }
+
+  function validateRequiredPlaceholders(objectPayload, fecha) {
+    const required = [
+      ["object.run", objectPayload.run],
+      ["object.nombres", objectPayload.nombres],
+      ["object.paterno", objectPayload.paterno],
+      ["object.prevision", objectPayload.prevision],
+      ["object.fecha_nacimiento", objectPayload.fecha_nacimiento],
+      ["fecha", fecha],
+    ];
+
+    return required.filter(([, value]) => !String(value || "").trim()).map(([name]) => name);
   }
 
   // --------- resize ---------
@@ -520,7 +532,9 @@
     resizeTimer = setTimeout(() => {
       resizeTimer = null;
       try {
-        const h = Math.max(document.body.scrollHeight, 200);
+        // Sell sidebar can render the iframe with a small default height.
+        // Keep a larger minimum height to avoid cramped UI.
+        const h = Math.max(document.body.scrollHeight, 750);
         client.invoke("resize", { height: h });
       } catch (_e) {
         // ignore
